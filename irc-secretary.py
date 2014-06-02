@@ -13,6 +13,11 @@ The known commands are:
     channel leave <channel> -- Leave a channel
     log start <channel>
     log stop <channel>
+    task add <description> -- Add a new task to the list
+    task start <id> -- Mark the task as WIP
+    task stop <id> -- Unmark the task as WIP
+    task finish <id> -- Finish the task identified by <id>
+    task purge -- Delete Finished tasks
     bye -- Let the secretary cease to exist.
 """
 
@@ -27,9 +32,10 @@ class SecretaryBot(SingleServerIRCBot):
         SingleServerIRCBot.__init__(self, [(server, port)], nickname, nickname)
         self.boss = boss 
         self.logging = {}
+        self.tasks = []
 
     def on_nicknameinuse(self, c, e):
-        c.nick(c.get_nickname() + "_")
+        c.nick(c.get_nickname() + '_')
 
     def on_welcome(self, c, e):
         self._report("Hi boss, I'm here to assist you. Type 'help' to view available commands.")
@@ -56,18 +62,20 @@ class SecretaryBot(SingleServerIRCBot):
                 self._channel_action(cmd)
             elif cmd.startswith('log'):
                 self._log_action(cmd)
+            elif cmd.startswith('task'):
+                self._task_action(cmd)
             elif cmd == 'help':
                 self._helpmsg()
             elif cmd == 'info':
                 self._info()
-            elif cmd == "thanks":
+            elif cmd == 'thanks':
                 #self._finish_tasks()
                 #self.die()
                 pass
-            elif cmd == "bye":
+            elif cmd == 'bye':
                 self.die()
             else:
-                self._report("Not understood: " + cmd)
+                self._report('Not understood: ' + cmd)
     
     def _report(self, msg):
         self.connection.privmsg(self.boss, msg)
@@ -75,7 +83,7 @@ class SecretaryBot(SingleServerIRCBot):
     def _channel_action(self, cmd):
         parts  = cmd.split()
         if len(parts) < 3:
-            self._report("You must indicate at least one channel for this action.")
+            self._report('You must indicate at least one channel for this action.')
             return
         action = parts[1]
         channels = parts[2:]
@@ -93,7 +101,7 @@ class SecretaryBot(SingleServerIRCBot):
     def _log_action(self, cmd):
         parts  = cmd.split()
         if len(parts) < 3:
-            self._report("You must indicate at least one channel for this action.")
+            self._report('You must indicate at least one channel for this action.')
             return
         action = parts[1]
         channels = parts[2:]
@@ -123,12 +131,56 @@ class SecretaryBot(SingleServerIRCBot):
                     self.connection.action(channel, 'stoped recording activity in this channel')
                     self._report('Stoped logging %s to %s' % (channel, fname))
 
+
+    def _task_action(self, cmd):
+        parts  = cmd.split()
+        if len(parts) < 2:
+            self._report('You must indicate an action for this command')
+            return
+        action = parts[1]
+
+        workflow = {
+            'start': 'working',
+            'stop': 'paused',
+            'finish': 'finished',
+        }
+
+        if action == 'purge':
+            purged = [ x for x in self.tasks if x['status'] != 'finished' ]
+            diff = len(self.tasks) - len(purged)
+            self.tasks = purged
+            self._report('%d tasks purged.' % (diff,))
+        else:
+            if len(parts) < 3:
+                self._report('This action needs an argument.')
+                return
+            args = parts[2:]
+            if action == 'add':
+                description = ' '.join(args)
+                t = {
+                    'description': description,
+                    'status': 'new',
+                }
+                self.tasks.append(t)
+                self._report('Added task "%s"' % (t['description'],))
+            elif action in ('start', 'stop', 'finish'):
+                tid = int(args[0])
+                t = self.tasks[tid]
+                t['status'] = workflow[action]
+                self._report('%s work on "%s"' % (action.capitalize(), t['description']))
+
     def _info(self):
         self._report('------')
         self._report('Working in the following channels:')
         for channel in self.channels:
             logging = channel in self.logging
             self._report('%s\t Log: %s - Ask: %s' % (channel, str(logging), 'N/A'))
+        self._report('------')
+        self._report('Tasks list:')
+        i = 0
+        for task in self.tasks:
+            self._report('%d - [%s] %s' % (i, task['status'], task['description']))
+            i += 1
         self._report('------')
 
     def _log_event(self, e):
@@ -151,16 +203,16 @@ class SecretaryBot(SingleServerIRCBot):
 def main():
     import sys
     if len(sys.argv) < 3:
-        print "Usage: irc-secretary <server[:port]> <user>"
+        print 'Usage: irc-secretary <server[:port]> <user>'
         sys.exit(1)
 
-    s = sys.argv[1].split(":", 1)
+    s = sys.argv[1].split(':', 1)
     server = s[0]
     if len(s) == 2:
         try:
             port = int(s[1])
         except ValueError:
-            print "Error: Erroneous port."
+            print 'Error: Erroneous port.'
             sys.exit(1)
     else:
         port = 6667
@@ -170,5 +222,5 @@ def main():
     bot = SecretaryBot(user, server, port)
     bot.start()
 
-if __name__ == "__main__":
+if __name__ == '__main__':
     main()
